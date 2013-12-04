@@ -9,7 +9,6 @@ namespace MEAClosedLoop
   using TRawData = UInt16;
   using TData = Double;
   using TStimIndex = System.Int16;
-  using StimuliList = List<TStimGroup>;
 
   using TRawDataPacket = Dictionary<int, ushort[]>;
   //using TStimIndex = System.Int16;
@@ -46,7 +45,7 @@ namespace MEAClosedLoop
       //N_MEAN = 1;
     }
 
-    public List<TStimIndex> Detect(TRawData[] packet, StimuliList expectedStims)
+    public List<TStimIndex> Detect(TRawData[] packet, List<TStimGroup> expectedStims)
     {
       List<TStimIndex> detected = new List<TStimIndex>();
       if (expectedStims != null)
@@ -72,7 +71,7 @@ namespace MEAClosedLoop
             if (FindRightEdge(packet, offset, ref idx))
             {
               detected.Add(idx);
-              i += 2;                             // Skip 2 subsequent periods, since they cannot contain new blanking artefact
+              i += 2;                             // Skip 2 subsequent periods, since they cannot contain new blanking artifact
             }
           }
         }
@@ -105,8 +104,9 @@ namespace MEAClosedLoop
 
   }
 }
+
 /*
-          // Wrong idea. It seems to be better to compare noise level with fixed threshold rather than relative.
+          // Wrong idea. It seems to be better to compare noise level with the fixed threshold rather than relative.
           // m_meanSE = (m_meanSE * (N_MEAN - 1) + se[i]) / N_MEAN;
           // N_MEAN = EXP_MEAN_N;
           // if (se[i] * m_threshhold < m_meanSE)

@@ -9,75 +9,93 @@ using System.Threading;
 using System.Diagnostics;
 using System.IO;
 using MEAClosedLoop.Properties;
+
 namespace StimDetectorTest
 {
-  using StimuliList = List<TStimGroup>;
-  using MSTime = UInt64;
+  using TTime = UInt64;
+  using TStimIndex = System.Int16;
+  using TAbsStimIndex = System.UInt64;
+
   class Program
   {
-    List<int> m_channelList;
-    //CInputStream m_inputStream;
-    private int m_selectedDAQ = -1;
-    private int m_fileIdx = -1;
-    //private string m_fileOpened = "";  //не нужна
-    private bool m_DAQConfigured = false;
+    private const int DAQ_FREQ = 25000;
+    private const int TIME_MULT = DAQ_FREQ / 1000;
+
+    private const TTime SINGLE_STIM_PERIOD = 10000 * TIME_MULT;
+
+    private const int MULTI_PACK_NUM = 6;
+    private const UInt16 MULTI_INNER_PERIOD = 10 * TIME_MULT;
+    private const UInt16 MULTI_PACK_PERIOD = 300 * TIME_MULT;
+
+    private const UInt16 MAX_TIME_NOISE = 10 * TIME_MULT;
+
+    private const TTime MAX_FILE_LENGTH = 800000 * TIME_MULT;
+
+
     private CMcsUsbListNet m_usbDAQList = new CMcsUsbListNet();
-    Thread m_dataLoopThread;
-    static StimuliList sl_vary;
-    const MSTime SINGLE_IMP_RANGE = 10000;
+    static List<TStimGroup> sl_vary; //with noise
+    static List<TStimGroup> sl_groups; //exact
 
-    const int STIM_PACK_NUM = 6;
-    const MSTime STIM_PACK_IMP_RANGE = 340;
-    const MSTime STIM_PACK_PER = 10;
-
-    const MSTime MAX_TIME_NOISE = 10;
-
-
-    static MSTime Int2Time(UInt64 input)
-    {
-      //100ms = 2500
-      MSTime output = input / 25;
-      return output;
-    }
-
-    const MSTime DO_HRENA = 800000;
-
-    static UInt64 Time2Int(MSTime input)
-    {
-      UInt64 output = input * 25;
-      return output;
-    }
-
-    static MSTime GenNoise(MSTime dest, MSTime maxNoise)
+    static TTime GenNoise(TTime dest, TTime maxNoise)
     {
       Random random = new Random();
-      int randNoise = random.Next(0, Convert.ToInt32(2*maxNoise));
+      int randNoise = random.Next(0, Convert.ToInt32(2 * maxNoise));
       return dest - maxNoise + Convert.ToUInt64(randNoise);
     }
 
-    static StimuliList GenStimulList(MSTime start_time, Int32 stimType, MSTime totalTime)
+    static List<TStimGroup> GenStimulList(TTime start_time, Int32 stimType, TTime totalTime)
     {
-      MSTime timeIterator;
+      TTime timeIterator;
       TStimGroup newStim;
-      StimuliList output = new StimuliList();
-      
+      List<TStimGroup> output = new List<TStimGroup>();
+
       switch (stimType)
       {
         case 1:
           newStim.count = 1;
           newStim.period = 0;
-          for (timeIterator = start_time; timeIterator < totalTime; timeIterator += GenNoise(SINGLE_IMP_RANGE, MAX_TIME_NOISE))
+          for (timeIterator = start_time; timeIterator < totalTime; timeIterator += SINGLE_STIM_PERIOD)
           {
-            newStim.stimTime = Time2Int(timeIterator);
+            newStim.stimTime = timeIterator;
             output.Add(newStim);
           }
           break;
         case 2:
           newStim.count = 6;
-          newStim.period = Convert.ToUInt16(Time2Int(STIM_PACK_PER));
-          for (timeIterator = start_time; timeIterator < totalTime; timeIterator += GenNoise(STIM_PACK_IMP_RANGE, MAX_TIME_NOISE))
+          newStim.period = MULTI_INNER_PERIOD;
+          for (timeIterator = start_time; timeIterator < totalTime; timeIterator += MULTI_PACK_PERIOD)
           {
-            newStim.stimTime = Time2Int(timeIterator);
+            newStim.stimTime = timeIterator;
+            output.Add(newStim);
+          }
+          break;
+      }
+      return output;
+    }
+
+    static List<TStimGroup> GenStimulVaryList(TTime start_time, Int32 stimType, TTime totalTime)
+    {
+      TTime timeIterator;
+      TStimGroup newStim;
+      List<TStimGroup> output = new List<TStimGroup>();
+
+      switch (stimType)
+      {
+        case 1:
+          newStim.count = 1;
+          newStim.period = 0;
+          for (timeIterator = start_time; timeIterator < totalTime; timeIterator += GenNoise(SINGLE_STIM_PERIOD, MAX_TIME_NOISE))
+          {
+            newStim.stimTime = timeIterator;
+            output.Add(newStim);
+          }
+          break;
+        case 2:
+          newStim.count = 6;
+          newStim.period = MULTI_PACK_PERIOD;
+          for (timeIterator = start_time; timeIterator < totalTime; timeIterator += GenNoise(MULTI_PACK_PERIOD, MAX_TIME_NOISE))
+          {
+            newStim.stimTime = timeIterator;
             output.Add(newStim);
           }
           break;
@@ -86,104 +104,118 @@ namespace StimDetectorTest
 
     }
 
+    static List<TAbsStimIndex> Groups2Indices(List<TStimGroup> input)
+    {
+      List<TAbsStimIndex> output = new List<TAbsStimIndex>();
+      int localCount;
+      TAbsStimIndex newIndex;
 
-    private const string confName = "../../config.cfg";
+      foreach (TStimGroup groupIterator in input)
+      {
+        for (localCount = 0; localCount < groupIterator.count; localCount++)
+        {
+          newIndex = groupIterator.stimTime + (UInt64)(localCount * groupIterator.period);
+          output.Add(newIndex);
+        }
+      }
 
-    // does not work
-    /*static string ParseConfigLine(string s, out int stimType, out int stimStart) {
-        int CurrentStringPosition = 0;
-        string returnValue;
-        stimType = Int32.Parse(s); //channel type
-        CurrentStringPosition = s.IndexOf(' ') + 1;
 
-        stimStart = Int32.Parse(s.Substring(CurrentStringPosition)); //time x40
-        CurrentStringPosition = s.IndexOf(' ', CurrentStringPosition) + 1;
-            
-        returnValue = s.Substring(CurrentStringPosition); //filename
 
-        Console.WriteLine("\tDEBUG: ChannelType:    {0}", stimType);
-        Console.WriteLine("\tTIME:           {0}", stimStart);
-        Console.WriteLine("\tFilename:           {0}", returnValue);
-        Console.WriteLine();
+      return output;
+    }
 
-        return returnValue;
-    }*/
 
+    private const string confName = "config.cfg";
 
 
     static void Main(string[] args)
     {
-      //CInputStream In = new CInputStream(, m_channelList, 2500); //deault
-      //int errorRate = 0;
-      Stopwatch sw1 = new Stopwatch();
+      long timeElapsed = 0;
       UInt64 errorRate = 0;
-
+      int countOverhead = 0;
 
       using (StreamReader strReader = new StreamReader(confName)) //reading config
       {
         string[] ss;
         while (!strReader.EndOfStream)
         {
-          Int32 stimType, stimStart;
+          Int32 stimType;
+          UInt64 stimStart;
           string fileName;
-          ss = strReader.ReadLine().Split(new Char[] { ' ', ' ' });
+          string str = strReader.ReadLine();
+          if (str[0] == '#') continue;
+          ss = str.Split(new Char[] { ' ', '\t' });
           stimType = Int32.Parse(ss[0]);
-          stimStart = Int32.Parse(ss[1]);
+          stimStart = UInt64.Parse(ss[1]);
           fileName = ss[2];
 
           Console.WriteLine("\tFILE: {0}", fileName);
 
-          sl_vary = GenStimulList(Int2Time(Convert.ToUInt64(stimStart)), stimType, DO_HRENA);
-
+          if (stimType != 0)
+          {
+            sl_groups = GenStimulList(stimStart, stimType, MAX_FILE_LENGTH);
+            sl_vary = GenStimulVaryList(stimStart, stimType, MAX_FILE_LENGTH);
+          }
+          else
+          {
+            sl_vary = null;
+            sl_groups = null;
+          }
 
           CDetectorTest tester = new CDetectorTest(fileName, sl_vary);
 
-          sw1.Start();
-          errorRate+=tester.RunTest();
-          sw1.Stop();
-          Console.WriteLine("\tTIME (in milliseconds): " + sw1.ElapsedMilliseconds.ToString());
+          List<TAbsStimIndex> foundStimIndices = tester.RunTest();
+
+          List<TAbsStimIndex> realStimIndices = Groups2Indices(sl_groups);
+
+          if (realStimIndices == null)
+          {
+            errorRate = Convert.ToUInt64(foundStimIndices.Count());
+          }
+          else
+          {
+            int commonStimsCount = foundStimIndices.Count();
+            if (commonStimsCount > realStimIndices.Count())
+            {
+              // [TODO] CountOverhead считается не точно, т.к. объём realStimIndices сильно завышен.
+              // Но это не страшно, т.к. в случае, если стимулов найдётся больше чем заказывали, то сильно увеличится суммарная ошибка.
+              countOverhead = commonStimsCount - realStimIndices.Count();
+              commonStimsCount = realStimIndices.Count();
+            }
+
+
+            Console.WriteLine("stims count: " + commonStimsCount.ToString());
+            for (int i = 0; i < commonStimsCount; i++)
+            {
+              if (foundStimIndices[i] > realStimIndices[i])
+              {
+                errorRate += foundStimIndices[i] - realStimIndices[i];
+              }
+              else
+              {
+                errorRate += realStimIndices[i] - foundStimIndices[i];
+              }
+              Console.WriteLine("index " + i.ToString() + ": error: " + errorRate.ToString());
+            }
+          }
+
+
+
+          timeElapsed += tester.TimeElapsed;
+          countOverhead += tester.NumberExceeded;
+
+          Console.WriteLine("\tTIME (in milliseconds): " + timeElapsed.ToString());
+          if (countOverhead > 0)
+          {
+            Console.WriteLine("\tThe maximum expected number of artifacts has been exceeded by: " + countOverhead.ToString());
+          }
         }
       }
 
       Console.WriteLine("TOTAL ERROR: {0}", errorRate);
-
+      Console.ReadKey();
     }
 
-
-
-    /*void Init()
-    {
-        // Check if all necessary components of DAQ have been already created
-        if (!m_DAQConfigured)
-        {
-            // Configure Input Stream and filters here
-            if (m_inputStream == null)
-            {
-                if (m_selectedDAQ == m_fileIdx)
-                {
-                    m_inputStream = new CInputStream(m_fileOpenedconfig data, m_channelList, 2500);
-                }
-                else
-                {
-                    m_inputStream = new CInputStream(m_usbDAQList, 0, m_channelList, 2500); //not used
-                }
-            }
-
-            // (int)SpikeFiltOrder.Value, 25000.0, Convert.ToDouble(SpikeLowCut.Value), Convert.ToDouble(SpikeHighCut.Value), DATA_BUF_LEN
-            BFParams parBF = new BFParams(2, 25000, 150.0, 2000.0, 2500); // [ToDo] Eliminate data buffer length
-
-            // [TODO] Get rid of thresholds here. Should be calculated in SALPA dynamically
-            int[] thresholds = new int[60];
-            for (int i = 0; i < 60; i++)
-            {
-                thresholds[i] = 1000 * 3;
-            }
-
-            m_DAQConfigured = true;
-        }
-
-        m_inputStream.Start();
-    }*/
   }
 
 }

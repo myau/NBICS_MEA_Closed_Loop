@@ -4,6 +4,7 @@ using System.Collections.Concurrent;
 using System.Text;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using UsbNetDll;
 
 namespace MEAClosedLoop
@@ -12,7 +13,7 @@ namespace MEAClosedLoop
 
   public class CRawFileReader : IRawDataProvider
   {
-    private const int CRLF = 2;
+    private const int CRLF = 2;                     // Length of CRLF in Windows = 2
     private const int CYCLE_QUEUE_SIZE = 10;
     private const int START_CHANNEL_LIST = 13;
     private const int DEFAULT_SAMPLE_RATE = 25000;
@@ -26,6 +27,7 @@ namespace MEAClosedLoop
     private string m_fileName;
     private long m_startOfData;
     private bool m_paused = false;
+    private AutoResetEvent waitEOF;
 
     // Callback functions
     private OnChannelData m_onChannelData;
@@ -81,6 +83,7 @@ namespace MEAClosedLoop
       m_freePacketPool = new ConcurrentQueue<TRawDataPacket>();
       FillPool(ref m_freePacketPool, m_channelsToRead, m_blockSize);
 
+      waitEOF = new AutoResetEvent(false);
       // [DEBUG]
       //log = new long[10000];
 
@@ -122,7 +125,7 @@ namespace MEAClosedLoop
         m_onError("No one channel selected!", 0);
         return;
       }
-      if (m_readoutTimer.Enabled)
+      if ((m_binReader != null) || m_readoutTimer.Enabled)
       {
         m_onError("Device has been already started!", 0);
         return;
@@ -130,7 +133,7 @@ namespace MEAClosedLoop
       m_binReader = new BinaryReader(File.Open(m_fileName, FileMode.Open, FileAccess.Read));
       m_binReader.BaseStream.Position = m_startOfData;
       m_cbHandle = 0;
-      m_readoutTimer.Start();
+      if (!m_paused) m_readoutTimer.Start();
     }
 
     // Read Data ========================================================================================================
@@ -189,6 +192,12 @@ namespace MEAClosedLoop
         TimerProc(o1, e1);
       }
     }
+    // [DEBUG]
+    // Wait till End of File ============================================================================================
+    public void WaitEOF()
+    {
+      waitEOF.WaitOne();
+    }
 
     // Private functions ================================================================================================
     // TimerProc runs in separate thread so we should take care about data sychronization
@@ -227,6 +236,7 @@ namespace MEAClosedLoop
       catch (EndOfStreamException e)
       {
         StopDacq();
+        waitEOF.Set();
         // System.Windows.Forms.MessageBox.Show("EOF! " + e.Message);
       }
 
@@ -257,6 +267,7 @@ namespace MEAClosedLoop
         char[] header = new char[11];
         strReader.Read(header, 0, 11);
         int position = 11;
+
         if (new string(header).CompareTo("MC_DataTool") == 0)
         {
           string s;
