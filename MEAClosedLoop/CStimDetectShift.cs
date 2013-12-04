@@ -33,6 +33,11 @@ namespace MEAClosedLoop
       PreViewData = new Int32[0];
       // TODO: Complete member initialization
     }
+    public void ClearBuff()
+    {
+      FullData = null;
+      PreViewData = null;
+    }
     public List<TStimIndex> GetStims(TRawData[] DataPacket, TStimGroup ExpectedStim)
     {
       #region FullData Array Prepearing
@@ -42,16 +47,17 @@ namespace MEAClosedLoop
       for (int i = 0; i < PreViewData.Length; i++)
       {
         FullData[i] = PreViewData[i];
-       
       }
       //Input to new massive copy
       for (int i = PreViewData.Length; i < PreViewData.Length + DataPacket.Length; i++)
       {
-        FullData[i] = DataPacket[i - PreViewData.Length];
-        FullData[i] -= Defaul_Zero_Point;
+        FullData[i] = -Defaul_Zero_Point + DataPacket[i - PreViewData.Length];
       }
       #endregion
       List<TStimIndex> FoundPegs = new List<TStimIndex>();
+      TestGraph GrafForm = new TestGraph();
+      GrafForm.Show();
+      GrafForm.DrawRawData(DataPacket);
       return GetStims(DataPacket);
 
       #region Temporary Solution to use expected stims 
@@ -99,7 +105,7 @@ namespace MEAClosedLoop
       PreViewData = new Int32[DataPacket.Length];
       for (int i = 0; i < DataPacket.Length; i++)
       {
-        PreViewData[i] = (TRawData)(DataPacket[i] - Defaul_Zero_Point);
+        PreViewData[i] = - Defaul_Zero_Point + DataPacket[i];
       }
 
       return FindedPegs;
@@ -153,6 +159,7 @@ namespace MEAClosedLoop
       }
 
     }
+
   }
   class Average
   {
