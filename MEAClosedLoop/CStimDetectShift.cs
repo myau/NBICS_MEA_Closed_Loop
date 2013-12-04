@@ -13,59 +13,53 @@ namespace MEAClosedLoop
   public class CStimDetectShift
   {
     public const int ErrorState = -3303;
-    private const TStimIndex FILTER_DEPTH = 8;
+    private const TStimIndex FILTER_DEPTH = 16;
     private const TStimIndex default_offset = 8;
-    private int shift;
-    private int DoubleStimPeriod;
-    private int sigma;
+    private const TStimIndex start_offset = 16;
+    private const TRawData Defaul_Zero_Point = 32768;
     private int AVD;// Average value of Derivative
     private const double MinDRatio = .5;// Min ration between AVG & Current Derivative  
-    private Average Current;
-    private Average Previews;
-    private List<int> ExpectedStims;
-    private int WayNum;
-    private TRawData[] F;
     private List<TStimGroup> m_expectedStims;
     private int MissedStimsCount; // how many stims wasn't found at preview Data Pocket
-    private TRawData[] m_prevDataPoints;
-
+    private Int32[] FullData; //Includes CurrentPacket & PreViewsPacket
+    private Int32[] PreViewData;// temporary Solution, includes PreView Data Pocket
     //Way Nums:
     //1:Deault, Find all pegs by using ExpectedStims
     //2: Get all pegs by Abstract reserch
 
     public CStimDetectShift()
     {
+      FullData = null;
+      PreViewData = new Int32[0];
       // TODO: Complete member initialization
-      m_prevDataPoints = new TRawData[6];
     }
     public List<TStimIndex> GetStims(TRawData[] DataPacket, TStimGroup ExpectedStim)
     {
-      List<TStimIndex> FoundPegs = new List<TStimIndex>();
-      //List<TStimIndex> ErrorList = new List<TStimIndex> { 0 };
-      int ValidateCount = 0;
-      #region strange
-      // Process last FILTER_DEPTH points of the previous packet
-      this.F = m_prevDataPoints;
+      #region FullData Array Prepearing
 
-      // [TODO] Миша, если тебе нужен этот switch по WayNum, повтори его тут сам
-      /*
-        for (TStimIndex i = 0; i < FILTER_DEPTH; i++)
+      //Old to new Massiv Copy
+      FullData = new Int32[PreViewData.Length + DataPacket.Length];
+      for (int i = 0; i < PreViewData.Length; i++)
       {
-        m_prevDataPoints[FILTER_DEPTH + i] = DataPacket[i];
-        if (BasicValidateSingleStimInT(i))
-        {
-          ValidateCount++;
-          FoundPegs.Add((TStimIndex)(i - FILTER_DEPTH));
-        }
+        FullData[i] = PreViewData[i];
+       
       }
-       * */
+      //Input to new massive copy
+      for (int i = PreViewData.Length; i < PreViewData.Length + DataPacket.Length; i++)
+      {
+        FullData[i] = DataPacket[i - PreViewData.Length];
+        FullData[i] -= Defaul_Zero_Point;
+      }
       #endregion
-      // Process current packet
-      this.F = DataPacket;
+      List<TStimIndex> FoundPegs = new List<TStimIndex>();
+      return GetStims(DataPacket);
 
-      WayNum = 2;
+      #region Temporary Solution to use expected stims 
+      int ValidateCount = 0;
+      // Process current packet
       int DataPacketLength = DataPacket.Length - FILTER_DEPTH - 1;
 
+      
       //[TOTO] Оптимизировать цикл по Expected Stims
 
       for (TStimIndex i = default_offset; i < DataPacketLength; i++)
@@ -77,62 +71,53 @@ namespace MEAClosedLoop
         }
       }
       MissedStimsCount = ExpectedStim.count - ValidateCount;
-
-      for (int i = 0; i < FILTER_DEPTH; i++)
-      {
-        //m_prevDataPoints[i] = DataPacket[DataPacketLength + i];
-      }
-
       return FoundPegs;
-      //If all is realy bad;
-      //if(ValidateCount == 0) return null;
+      #endregion
     }
 
     public List<TStimIndex> GetStims(TRawData[] DataPacket)
     {
       List<TStimIndex> FindedPegs = new List<TStimIndex>();
       List<TStimIndex> ErrorList = new List<TStimIndex> { 0 };
-      this.F = DataPacket;
       int ValidateCount = 0;
+      int FirstUseIndex = 0;
+      if (PreViewData.Length == 0) FirstUseIndex = 1;
 
-      //TODO find all by hard research;
-      //Opimization cycle
-      int DataPacketLength = DataPacket.Length - 4;
-      //EndOpimization
-
-      for (Int16 i = 0; i < DataPacketLength; i++)
+      for (short i = (short)(PreViewData.Length + FirstUseIndex*start_offset); i < FullData.LongLength - FILTER_DEPTH; i++)
       {
         if (TrueValidateSingleStimInT(i, default_offset))
+        //if (BasicValidateSingleStimInT(i))
         {
           ValidateCount++;
           FindedPegs.Add(i);
         }
       }
 
-      //MissedStimsCount = ExpectedStim.count - ValidateCount;
-
+      MissedStimsCount = 0;//  ExpectedStim.count - ValidateCount;
+      
+      //Input to old massive copy
+      PreViewData = new Int32[DataPacket.Length];
+      for (int i = 0; i < DataPacket.Length; i++)
+      {
+        PreViewData[i] = (TRawData)(DataPacket[i] - Defaul_Zero_Point);
+      }
 
       return FindedPegs;
     }
     private bool BasicValidateSingleStimInT(long t)
     {
-      switch (WayNum)
+      if (FullData[t + 1] - FullData[t] > 65 &&
+          FullData[t + 2] - FullData[t + 1] > 55 &&
+          FullData[t + 3] - FullData[t + 2] > 35 &&
+          FullData[t + 4] - FullData[t + 3] > 30)
       {
-        case 1:
-          break;
-        case 2:
-          if (F[t + 1] - F[t] > 45 &&
-              F[t + 2] - F[t + 1] > 45 &&
-              F[t + 3] - F[t + 2] > 45)
-          {
-            return true;
-          }
-          else
-          {
-            return false;
-          }
+        return true;
       }
-      return false;
+      else
+      {
+        return false;
+      }
+
     }
     private bool TrueValidateSingleStimInT(long t, int maximum_offset)
     {
@@ -144,21 +129,21 @@ namespace MEAClosedLoop
 
         for (int i = 0; i < maximum_offset; i++)
         {
-          pre_average.AddValueElem(this.F[t - i]);
+          pre_average.AddValueElem(this.FullData[t - i]);
         }
         for (int i = 0; i < FILTER_DEPTH; i++)
         {
-          post_average.AddValueElem(this.F[t + i]);
+          post_average.AddValueElem(this.FullData[t + i]);
         }
 
         pre_average.Calc();
         post_average.Calc();
-        if (pre_average.IsInArea(F[t - 1])
-          && pre_average.IsInArea(F[t - 2])
-          && !pre_average.IsInArea(F[t])
-          && !pre_average.IsInArea(F[t + 1])
-          && pre_average.IsInArea(post_average.Value - post_average.Sigma)
-          && pre_average.IsInArea(post_average.Value + post_average.Sigma)
+        if (pre_average.IsInArea(FullData[t - 1])
+          && pre_average.IsInArea(FullData[t - 2])
+          && !pre_average.IsInArea(FullData[t])
+          && !pre_average.IsInArea(FullData[t + 1])
+          && !pre_average.IsInArea(post_average.Value - post_average.Sigma)
+          && !pre_average.IsInArea(post_average.Value + post_average.Sigma)
           ) return true;
         return false;
       }
@@ -166,7 +151,7 @@ namespace MEAClosedLoop
       {
         return false;
       }
-      
+
     }
   }
   class Average
