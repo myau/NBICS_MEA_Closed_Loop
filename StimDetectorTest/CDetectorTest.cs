@@ -61,7 +61,7 @@ namespace StimDetectorTest
       m_stimIndices = new List<TAbsStimIndex>();
       
       m_stimDetector = new CStimDetectShift();
-      m_artifChannel = m_inputStream.ChannelList[0];
+      m_artifChannel = m_inputStream.ChannelList[18]; //random channel
 
       if (sl != null)
       {
@@ -78,24 +78,25 @@ namespace StimDetectorTest
     {
       m_inputStream.Next();
       TTime endOfPacket = m_inputStream.TimeStamp + (TTime)currPacket[currPacket.Keys.Min()].Length;
-
+      //m_stimDetector.GetStims(currPacket[m_artifChannel], m_nextExpectedStim);
       if (m_nextExpectedStim.stimTime < endOfPacket)
       {
+
         List<TStimIndex> currentList;
         sw1.Start();
         if (m_CalmMode)
         {
-//          m_stimIndices.AddRange(m_stimDetector.GetStims(currPacket[m_artifChannel]));
+          //          m_stimIndices.AddRange(m_stimDetector.GetStims(currPacket[m_artifChannel]));
+
         }
         else
         {
-          currentList = m_stimDetector.GetStims(currPacket[m_artifChannel], m_nextExpectedStim);
+          currentList = m_stimDetector.GetStims(currPacket[m_artifChannel], m_prevPacket[m_artifChannel], m_nextExpectedStim);
           foreach (TStimIndex stimIdx in currentList)
           {
             m_stimIndices.Add(m_inputStream.TimeStamp + (TAbsStimIndex)stimIdx);
-            Console.WriteLine("stim add: " + m_stimIndices[m_stimIndices.Count()-1].ToString());
+            Console.WriteLine("stim add: " + m_stimIndices[m_stimIndices.Count() - 1].ToString());
           }
-
           m_nextExpectedStim = m_expectedStims[0];
           m_expectedStims.RemoveAt(0);
         }

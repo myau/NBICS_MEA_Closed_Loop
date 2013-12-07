@@ -19,22 +19,22 @@ namespace StimDetectorTest
   class Program
   {
     private const int DAQ_FREQ = 25000;
-    private const int TIME_MULT = DAQ_FREQ / 1000;
+    private const int TIME_MULT = DAQ_FREQ / 1000; //!< Коэффициент перевода времени в милисекунды
 
-    private const TTime SINGLE_STIM_PERIOD = 10000 * TIME_MULT;
+    private const TTime SINGLE_STIM_PERIOD = 10000 * TIME_MULT; //!< Период между одиночными стимулами (stimType = 1)
 
-    private const int MULTI_PACK_NUM = 6;
-    private const UInt16 MULTI_INNER_PERIOD = 10 * TIME_MULT;
-    private const UInt16 MULTI_PACK_PERIOD = 300 * TIME_MULT;
+    private const int MULTI_PACK_NUM = 6; //!< Количество стимулов в пачке
+    private const UInt16 MULTI_INNER_PERIOD = 10 * TIME_MULT; //!< Период между соседними стимулами внутри пачки
+    private const UInt16 MULTI_PACK_PERIOD = 300 * TIME_MULT; //!< Период между пачками
 
-    private const UInt16 MAX_TIME_NOISE = 10 * TIME_MULT;
+    private const UInt16 MAX_TIME_NOISE = 10 * TIME_MULT; //!< Максимальный разброс приблизительного времени стимуляции
 
-    private const TTime MAX_FILE_LENGTH = 800000 * TIME_MULT;
+    private const TTime MAX_FILE_LENGTH = 800000 * TIME_MULT; //!< Максимальная длина входного файла
 
 
     private CMcsUsbListNet m_usbDAQList = new CMcsUsbListNet();
-    static List<TStimGroup> sl_vary; //with noise
-    static List<TStimGroup> sl_groups; //exact
+    static List<TStimGroup> sl_vary; //!< Приблизительный список моментов стимуляции
+    static List<TStimGroup> sl_groups; //!< Точный список моментов стимуляции
 
     static TTime GenNoise(TTime dest, TTime maxNoise)
     {

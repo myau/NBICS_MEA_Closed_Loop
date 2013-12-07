@@ -5,5 +5,6 @@ var searchData=
   ['neurorighter',['Neurorighter',['../namespace_neurorighter.html',1,'']]],
   ['next',['Next',['../class_m_e_a_closed_loop_1_1_c_input_stream.html#a00b0525b141ff6b60e19806a390b1a3a',1,'MEAClosedLoop.CInputStream.Next()'],['../class_m_e_a_closed_loop_1_1_c_raw_file_reader.html#a1c92c6d5b787e6c5cfc6eef2e41dbde1',1,'MEAClosedLoop.CRawFileReader.Next()']]],
   ['nrtypes_2ecs',['NRTypes.cs',['../_n_r_types_8cs.html',1,'']]],
+  ['numberexceeded',['NumberExceeded',['../class_stim_detector_test_1_1_c_detector_test.html#a7619d9a84949bfc8d3a0987937c0ea0e',1,'StimDetectorTest::CDetectorTest']]],
   ['numstimreads',['numStimReads',['../struct_neurorighter_1_1_stim_tick.html#a0ef0c1f3165057bda81e31629403fea6',1,'Neurorighter::StimTick']]]
 ];

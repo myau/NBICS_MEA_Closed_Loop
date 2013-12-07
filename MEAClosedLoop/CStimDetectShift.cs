@@ -9,6 +9,7 @@ namespace MEAClosedLoop
   using TRawData = UInt16;
   using TData = Double;
   using TStimIndex = System.Int16;
+  using TTime = System.UInt64;
 
   public class CStimDetectShift
   {
@@ -16,29 +17,47 @@ namespace MEAClosedLoop
     private const TStimIndex FILTER_DEPTH = 16;
     private const TStimIndex default_offset = 8;
     private const TStimIndex start_offset = 16;
-    private const TRawData Defaul_Zero_Point = 32768;
-    private int AVD;// Average value of Derivative
-    private const double MinDRatio = .5;// Min ration between AVG & Current Derivative  
+    private const TRawData Defaul_Zero_Point = 32768; 
     private List<TStimGroup> m_expectedStims;
     private int MissedStimsCount; // how many stims wasn't found at preview Data Pocket
     private Int32[] FullData; //Includes CurrentPacket & PreViewsPacket
     private Int32[] PreViewData;// temporary Solution, includes PreView Data Pocket
+    private int CallCount;
+    private object LockStimList = new object();
+    TestGraph GrafForm;
     //Way Nums:
     //1:Deault, Find all pegs by using ExpectedStims
     //2: Get all pegs by Abstract reserch
+    public void SetExpectedStims(TStimGroup StimGroupToAdd)
+    {
+      lock (LockStimList) 
+      {
 
+      }
+    }
+    public bool IsStimulusExpected(TTime TestimgTime)
+    {
+      bool Flag = false;
+      lock (LockStimList)
+      {
+      }
+      return Flag;
+    }
     public CStimDetectShift()
     {
       FullData = null;
+      CallCount = 0;
       PreViewData = new Int32[0];
+      GrafForm = new TestGraph();
+      GrafForm.Show();
       // TODO: Complete member initialization
     }
     public void ClearBuff()
     {
       FullData = null;
-      PreViewData = null;
+      PreViewData = new Int32[0];
     }
-    public List<TStimIndex> GetStims(TRawData[] DataPacket, TStimGroup ExpectedStim)
+    public List<TStimIndex> GetStims(TRawData[] DataPacket, TRawData[] PrevDataPacket, TStimGroup ExpectedStim)
     {
       #region FullData Array Prepearing
 
@@ -54,10 +73,9 @@ namespace MEAClosedLoop
         FullData[i] = -Defaul_Zero_Point + DataPacket[i - PreViewData.Length];
       }
       #endregion
+      CallCount++;
       List<TStimIndex> FoundPegs = new List<TStimIndex>();
-      TestGraph GrafForm = new TestGraph();
-      GrafForm.Show();
-      GrafForm.DrawRawData(DataPacket);
+      
       return GetStims(DataPacket);
 
       #region Temporary Solution to use expected stims 
@@ -88,7 +106,9 @@ namespace MEAClosedLoop
       int ValidateCount = 0;
       int FirstUseIndex = 0;
       if (PreViewData.Length == 0) FirstUseIndex = 1;
-
+      /////
+      GrafForm.DrawRawData(DataPacket, "packet № " + CallCount.ToString());
+      ////
       for (short i = (short)(PreViewData.Length + FirstUseIndex*start_offset); i < FullData.LongLength - FILTER_DEPTH; i++)
       {
         if (TrueValidateSingleStimInT(i, default_offset))
@@ -98,16 +118,17 @@ namespace MEAClosedLoop
           FindedPegs.Add(i);
         }
       }
-
+      // ноль - временно для настройки поиска только в одном пакете
       MissedStimsCount = 0;//  ExpectedStim.count - ValidateCount;
-      
+
+      #region Previous Data Array Prepearing 
       //Input to old massive copy
       PreViewData = new Int32[DataPacket.Length];
       for (int i = 0; i < DataPacket.Length; i++)
       {
         PreViewData[i] = - Defaul_Zero_Point + DataPacket[i];
       }
-
+      #endregion
       return FindedPegs;
     }
     private bool BasicValidateSingleStimInT(long t)
@@ -144,6 +165,7 @@ namespace MEAClosedLoop
 
         pre_average.Calc();
         post_average.Calc();
+        GrafForm.DrawSigma(t - maximum_offset, t, (float) pre_average.Value, (float)pre_average.TripleSigma);
         if (pre_average.IsInArea(FullData[t - 1])
           && pre_average.IsInArea(FullData[t - 2])
           && !pre_average.IsInArea(FullData[t])

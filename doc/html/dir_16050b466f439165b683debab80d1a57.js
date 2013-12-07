@@ -9,7 +9,7 @@ var dir_16050b466f439165b683debab80d1a57 =
     [ "CCalcSE_N.cs", "_c_calc_s_e___n_8cs.html", "_c_calc_s_e___n_8cs" ],
     [ "CExpAvg.cs", "_c_exp_avg_8cs.html", "_c_exp_avg_8cs" ],
     [ "CMovingSum.cs", "_c_moving_sum_8cs.html", "_c_moving_sum_8cs" ],
-    [ "Common.cs", "_m_e_a_closed_loop_2_common_2_common_8cs.html", "_m_e_a_closed_loop_2_common_2_common_8cs" ],
+    [ "Common.cs", "_common_8cs.html", "_common_8cs" ],
     [ "CPack.cs", "_c_pack_8cs.html", [
       [ "CPack", "class_m_e_a_closed_loop_1_1_c_pack.html", "class_m_e_a_closed_loop_1_1_c_pack" ]
     ] ],

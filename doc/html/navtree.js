@@ -35,7 +35,7 @@ var NAVTREE =
 var NAVTREEINDEX =
 [
 "_butterworth_filter_8cs.html",
-"class_neurorighter_1_1_s_a_l_p_a_params.html#a417c19b48ad569ea19c97eb1cdf5e5e7"
+"class_neurorighter_1_1_s_a_l_p_a_params.html#a4ab63cfb975fa86c436c40d14e11ce0e"
 ];
 
 var SYNCONMSG = 'click to disable panel synchronisation';

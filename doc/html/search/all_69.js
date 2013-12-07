@@ -5,5 +5,6 @@ var searchData=
   ['interface_2ecs',['Interface.cs',['../_interface_8cs.html',1,'']]],
   ['iprocessor',['IProcessor',['../interface_common_1_1_interface_1_1_i_processor.html',1,'Common::Interface']]],
   ['irawdataprovider',['IRawDataProvider',['../interface_m_e_a_closed_loop_1_1_i_raw_data_provider.html',1,'MEAClosedLoop']]],
-  ['irawdataprovider_2ecs',['IRawDataProvider.cs',['../_i_raw_data_provider_8cs.html',1,'']]]
+  ['irawdataprovider_2ecs',['IRawDataProvider.cs',['../_i_raw_data_provider_8cs.html',1,'']]],
+  ['isinarea',['IsInArea',['../class_m_e_a_closed_loop_1_1_average.html#abf37943c94243036ccf640581b0c4041',1,'MEAClosedLoop::Average']]]
 ];

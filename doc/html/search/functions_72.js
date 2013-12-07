@@ -7,5 +7,5 @@ var searchData=
   ['restoreshape',['RestoreShape',['../class_m_e_a_closed_loop_1_1_c_stimulator.html#ab314b4a1d7561cd7c196cf227e2cbc13',1,'MEAClosedLoop::CStimulator']]],
   ['resume',['Resume',['../class_m_e_a_closed_loop_1_1_c_input_stream.html#a8bf19d054db3f7ee219dff615d8646c9',1,'MEAClosedLoop::CInputStream']]],
   ['resumedacq',['ResumeDacq',['../class_m_e_a_closed_loop_1_1_c_raw_file_reader.html#a27ea453047a8d725b3f5add141e3f610',1,'MEAClosedLoop::CRawFileReader']]],
-  ['runtest',['RunTest',['../class_stim_detector_test_1_1_c_detector_test.html#a781e9d8cf9f2047db26d4fa0e411cf81',1,'StimDetectorTest::CDetectorTest']]]
+  ['runtest',['RunTest',['../class_stim_detector_test_1_1_c_detector_test.html#a3cbea0bbd485cdb9b2a4a7a2c3547e9a',1,'StimDetectorTest::CDetectorTest']]]
 ];
