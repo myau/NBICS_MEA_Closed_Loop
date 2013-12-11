@@ -288,7 +288,7 @@ namespace MEAClosedLoop
         }
 
         // (int)SpikeFiltOrder.Value, 25000.0, Convert.ToDouble(SpikeLowCut.Value), Convert.ToDouble(SpikeHighCut.Value), DATA_BUF_LEN
-        BFParams parBF = new BFParams(2, 25000, 150.0, 2000.0, 2500); // [ToDo] Eliminate data buffer length
+        BFParams parBF = new BFParams(2, 25000, 150.0, 2000.0, 2500); // [TODO] Eliminate data buffer length
 
         // [TODO] Get rid of thresholds here. Should be calculated in SALPA dynamically
         int[] thresholds = new int[60];
@@ -299,7 +299,11 @@ namespace MEAClosedLoop
         // length_sams [75], asym_sams [10], blank_sams [75], ahead_sams [5], forcepeg_sams [10], thresholds[]
         SALPAParams parSALPA = new SALPAParams(35, 10, 35, 5, 10, thresholds);
         //m_bandpassFilter = new CFiltering(m_inputStream, null, null);
-        m_salpaFilter = new CFiltering(m_inputStream, parSALPA, null);
+
+        // [TODO] Get parameters from the UI and save them in Settings
+        CStimDetector m_stimDetector = new CStimDetector(15, 20, 35, 150);
+
+        m_salpaFilter = new CFiltering(m_inputStream, m_stimDetector, parSALPA, null);
         //m_bandpassFilter = new CFiltering(m_inputStream, null, parBF);
         m_salpaFilter.OnDataAvailable = PeekData;
         m_spikeDetector = new CSpikeDetector(m_salpaFilter, -4.9);
