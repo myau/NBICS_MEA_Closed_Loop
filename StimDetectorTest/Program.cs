@@ -153,8 +153,12 @@ namespace StimDetectorTest
 
           if (stimType != 0)
           {
+            Console.Write("Building exact stimuli list... ");
             sl_groups = GenStimulList(stimStart, stimType, MAX_FILE_LENGTH);
+            Console.WriteLine("Done.");
+            Console.Write("Building noisy stimuli list... ");
             sl_vary = GenStimulVaryList(stimStart, stimType, MAX_FILE_LENGTH);
+            Console.WriteLine("Done.");
           }
           else
           {
@@ -164,7 +168,15 @@ namespace StimDetectorTest
 
           CDetectorTest tester = new CDetectorTest(fileName, sl_vary);
 
+          Console.WriteLine("Test progress: ");
           List<TAbsStimIndex> foundStimIndices = tester.RunTest();
+          Console.WriteLine("\nTest is completed");
+
+          // Generate Stimuli list again, now with the real record length
+          if (stimType != 0)
+          {
+            sl_groups = GenStimulList(stimStart, stimType, tester.RecordLength);
+          }
 
           List<TAbsStimIndex> realStimIndices = Groups2Indices(sl_groups);
 
@@ -179,12 +191,15 @@ namespace StimDetectorTest
             {
               // [TODO] CountOverhead считается не точно, т.к. объём realStimIndices сильно завышен.
               // Но это не страшно, т.к. в случае, если стимулов найдётся больше чем заказывали, то сильно увеличится суммарная ошибка.
+              // [DONE] It seems to be fixed by regenerating of the stimuli list after the test
               countOverhead = commonStimsCount - realStimIndices.Count();
               commonStimsCount = realStimIndices.Count();
             }
 
+            Console.WriteLine("stims expected:  {0}", realStimIndices.Count());
+            Console.WriteLine("stims found:     {0}", foundStimIndices.Count());
+            Console.WriteLine("stims not found: {0}", realStimIndices.Count() - commonStimsCount);
 
-            Console.WriteLine("stims count: " + commonStimsCount.ToString());
             for (int i = 0; i < commonStimsCount; i++)
             {
               if (foundStimIndices[i] > realStimIndices[i])
