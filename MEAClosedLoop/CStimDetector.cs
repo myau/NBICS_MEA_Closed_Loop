@@ -8,23 +8,33 @@ namespace MEAClosedLoop
 {
   using TRawData = UInt16;
   using TData = Double;
+  using TTime = UInt64;
   using TStimIndex = System.Int16;
-
   using TRawDataPacket = Dictionary<int, ushort[]>;
-  //using TStimIndex = System.Int16;
 
   public class CStimDetector
   {
+    private const TTime INFINITY = TTime.MaxValue;
     //private const int EXP_MEAN_N = 50;
     //private TRawDataPacket m_prevPacket;
     private CCalcSE_N m_calcSE;
     private double m_threshhold;
     private int m_blankWidth;
     private int m_maxSlope;
+    // Maximum possible deviation of stimulus with respect to the expected stimulus
+    private uint m_maxJitter;
     private bool m_prevPacketNotFinished = false;
     private bool m_continuePrevPacket = false;
     private TRawData[] m_prevBlock;
     private TData m_prevSE;
+    private List<TStimGroup> m_expectedStims;
+    private object lockStimList = new object();
+    private TStimGroup m_nextExpectedStim;
+    private int m_artifChannel = -1;
+    public int ArtifactChannel { set { m_artifChannel = value; } }
+    bool m_stimExpectedNow = false;
+
+
     //private double m_meanSE = 0;
     //private int N_MEAN;
 
@@ -32,25 +42,57 @@ namespace MEAClosedLoop
     /// <summary>
     /// Stimulus artefact detector
     /// </summary>
-    /// <param name="n">SE window width. Should be half of "still" period</param>
+    /// <param name="n">SE window width. Should be equal to a half of the blanking period</param>
+    /// <param name="maxJitter">Maximum possible deviation of the real stimulus with respect to the expected one</param>
     /// <param name="threshhold">How much SE should decrease to consider start of blanking period</param>
     /// <param name="maxSlope">How much should be summary slope of 3 samples after blanking period</param>
-    public CStimDetector(int n, TData threshhold = 35, TRawData maxSlope = 150)
+    public CStimDetector(int n, int maxJitter = 20 * Param.MS, TData threshhold = 35, TRawData maxSlope = 150)
     {
       m_calcSE = new CCalcSE_N(n);
       m_prevBlock = new TRawData[n];
       m_blankWidth = n;
       m_threshhold = threshhold;
       m_maxSlope = maxSlope;
+      m_maxJitter = (uint)maxJitter;
+      m_expectedStims = new List<TStimGroup>();
+      m_nextExpectedStim.stimTime = INFINITY;
       //N_MEAN = 1;
     }
 
-    public List<TStimIndex> Detect(TRawData[] packet, List<TStimGroup> expectedStims)
+    public void SetExpectedStims(TStimGroup nextStimGroup)
+    {
+      lock (lockStimList)
+      {
+        if (m_nextExpectedStim.stimTime == INFINITY)
+        {
+          m_nextExpectedStim = nextStimGroup;
+        }
+        else
+        {
+          m_expectedStims.Add(nextStimGroup);
+        }
+      }
+    }
+
+    public bool IsDataRequired(TTime eopTimestamp)
+    {
+      lock (lockStimList)
+      {
+        if (m_expectedStims.Count > 0) return false;
+        return m_stimExpectedNow = (eopTimestamp + m_maxJitter >= m_nextExpectedStim.stimTime); //m_expectedStims[0].stimTime);
+      }
+    }
+
+    public List<TStimIndex> Detect(TRawDataPacket fullPacket)
     {
       List<TStimIndex> detected = new List<TStimIndex>();
-      if (expectedStims != null)
+      TRawData[] packet = fullPacket[m_artifChannel];
+
+      if (m_expectedStims != null)
       {
         // [TODO] Code to take expectedStims into account should be placed here
+
+
       }
       else
       {

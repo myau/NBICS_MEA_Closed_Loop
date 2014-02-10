@@ -2,155 +2,263 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
-
+using System.Drawing;
+using System.Windows.Forms;
+using MEAClosedLoop;
+using System.Threading;
 namespace MEAClosedLoop
 {
-
-  using TRawData = UInt16;
-  using TData = Double;
+  #region Definitions
+  using TData = System.Double;
+  using TTime = System.UInt64;
   using TStimIndex = System.Int16;
-
+  using TAbsStimIndex = System.UInt64;
+  using TRawData = UInt16;
+  using TRawDataPacket = Dictionary<int, ushort[]>;
+  #endregion
   public class CStimDetectShift
   {
+    #region Стандартные значения класса
     public const int ErrorState = -3303;
-    private const TStimIndex FILTER_DEPTH = 16;
+    private const TStimIndex FILTER_DEPTH = 22;
     private const TStimIndex default_offset = 8;
     private const TStimIndex start_offset = 16;
+    private const TStimIndex GUARANTEED_EMPTY_SPACE = 100;
+    private const TStimIndex POST_SIGMA_CALC_DEPTH = 16;
     private const TRawData Defaul_Zero_Point = 32768;
-    private int AVD;// Average value of Derivative
-    private const double MinDRatio = .5;// Min ration between AVG & Current Derivative  
     private List<TStimGroup> m_expectedStims;
-    private int MissedStimsCount; // how many stims wasn't found at preview Data Pocket
-    private Int32[] FullData; //Includes CurrentPacket & PreViewsPacket
-    private Int32[] PreViewData;// temporary Solution, includes PreView Data Pocket
-    //Way Nums:
-    //1:Deault, Find all pegs by using ExpectedStims
-    //2: Get all pegs by Abstract reserch
+    public int m_Artif_Channel = 14;
+    public int m_Artif_Channel2 = 14;
+    #endregion
 
+    #region Внутрение данные
+    private cases CurrentCase;
+    private cases NextCase;
+    private int CallCount;
+    private object LockStimList = new object();
+    private TRawDataPacket PrevPacket;
+    private ushort MaximumShiftRange = 250;
+    private TTime CurrentTime;
+    private bool IsInNextBuffZone;
+    private bool IsInCurrentZone;
+    private bool IsNullReturned;
+    public CGraphRender DataRender;
+    List<TStimIndex> FindedPegs;
+    public TRawData[] inner_data_to_display;
+    //TestGraph GrafForm = new TestGraph();
+    #endregion
+    #region Конструктор
     public CStimDetectShift()
     {
-      FullData = null;
-      PreViewData = new Int32[0];
-      // TODO: Complete member initialization
+      CurrentCase = new cases();
+      NextCase = new cases();
+      m_expectedStims = new List<TStimGroup>();
+      //Отстуствие артефактов в начале
+      IsInCurrentZone = false;
+      IsInNextBuffZone = false;
+      Thread RawDataRender = new Thread(DrawCallFunc);
+      RawDataRender.Start();
+
     }
-    public void ClearBuff()
+    #endregion
+    #region Добавление ожидаемых стимулов в список
+    public void SetExpectedStims(TStimGroup StimGroupToAdd)
     {
-      FullData = null;
-      PreViewData = null;
-    }
-    public List<TStimIndex> GetStims(TRawData[] DataPacket, TStimGroup ExpectedStim)
-    {
-      #region FullData Array Prepearing
-
-      //Old to new Massiv Copy
-      FullData = new Int32[PreViewData.Length + DataPacket.Length];
-      for (int i = 0; i < PreViewData.Length; i++)
+      lock (LockStimList)
       {
-        FullData[i] = PreViewData[i];
-      }
-      //Input to new massive copy
-      for (int i = PreViewData.Length; i < PreViewData.Length + DataPacket.Length; i++)
-      {
-        FullData[i] = -Defaul_Zero_Point + DataPacket[i - PreViewData.Length];
-      }
-      #endregion
-      List<TStimIndex> FoundPegs = new List<TStimIndex>();
-      TestGraph GrafForm = new TestGraph();
-      GrafForm.Show();
-      GrafForm.DrawRawData(DataPacket);
-      return GetStims(DataPacket);
-
-      #region Temporary Solution to use expected stims 
-      int ValidateCount = 0;
-      // Process current packet
-      int DataPacketLength = DataPacket.Length - FILTER_DEPTH - 1;
-
-      
-      //[TOTO] Оптимизировать цикл по Expected Stims
-
-      for (TStimIndex i = default_offset; i < DataPacketLength; i++)
-      {
-        if (TrueValidateSingleStimInT(i, default_offset))
+        for (int i = 0; i < StimGroupToAdd.count; i++)
         {
-          ValidateCount++;
-          FoundPegs.Add(i);
+          TStimGroup SingleStim = new TStimGroup();
+          SingleStim.count = 1;
+          SingleStim.stimTime = StimGroupToAdd.stimTime + (ulong)i * StimGroupToAdd.period;
+          m_expectedStims.Add(SingleStim);
         }
       }
-      MissedStimsCount = ExpectedStim.count - ValidateCount;
-      return FoundPegs;
-      #endregion
     }
-
-    public List<TStimIndex> GetStims(TRawData[] DataPacket)
+    #endregion
+    #region Проверка необходимости пакета, заканчивающегося временем TestingTime, анализ вхождения артефакта в этот пакет
+    public bool IsDataRequired(TTime TestingTime)
     {
-      List<TStimIndex> FindedPegs = new List<TStimIndex>();
-      List<TStimIndex> ErrorList = new List<TStimIndex> { 0 };
-      int ValidateCount = 0;
-      int FirstUseIndex = 0;
-      if (PreViewData.Length == 0) FirstUseIndex = 1;
 
-      for (short i = (short)(PreViewData.Length + FirstUseIndex*start_offset); i < FullData.LongLength - FILTER_DEPTH; i++)
+      bool Flag = false;
+      //- если было в следующем пакете
+      lock (LockStimList)
       {
-        if (TrueValidateSingleStimInT(i, default_offset))
-        //if (BasicValidateSingleStimInT(i))
+        foreach (TStimGroup stim in m_expectedStims)
         {
-          ValidateCount++;
+          #region CASE_0 - артефакт вошел в текущую буфферную зону и при предыдущем запросе был возвращен null
+          if (IsNullReturned)
+          {
+            Flag = true;
+            IsInCurrentZone = false;
+            IsInNextBuffZone = false;
+            break;
+          }
+          #endregion
+          #region CASE_1 - артефакт входит во внутрь пакета, исключая буфферные зоны
+          if (stim.stimTime <= TestingTime + (ulong)FILTER_DEPTH)
+          {
+            IsInCurrentZone = true;
+            Flag = true;
+            //break;
+          }
+          else
+          {
+            IsInCurrentZone = false || IsInCurrentZone;
+          }
+          #endregion
+          #region CASE_2 - артефакт находится в первой буфферной зоне следующего и замыкающей предыдущего пакета.
+          if (stim.stimTime <= TestingTime + (ulong)FILTER_DEPTH && stim.stimTime >= TestingTime - (ulong)FILTER_DEPTH)
+          {
+            IsInNextBuffZone = true;
+            Flag = false;
+          }
+          else
+          {
+            IsInNextBuffZone = false || IsInNextBuffZone;
+          }
+          #endregion
+        }
+
+      }
+      if (Flag) CurrentTime = TestingTime;
+      return Flag;
+    }
+    #endregion
+    #region Выдача найденных в пакете артефактов
+    public List<TStimIndex> GetStims(TRawDataPacket DataPacket)
+    {
+      CallCount++;
+      #region Определение ситуации с расположением артефактов в пакете
+      //Случай, когда мы просим задержать пакет.
+      if (IsNullReturned)
+      {
+        #region Подготовка склеенного массива
+        TRawDataPacket _DataPacket = new TRawDataPacket();
+        for (int channel_index = 0; channel_index < 56; channel_index++)
+        {
+          _DataPacket.Add(channel_index, new TRawData[PrevPacket[channel_index].Length + DataPacket[channel_index].Length]);
+          //Копируем старый в новый
+          for (int i = 0; i < PrevPacket[channel_index].Length; i++)
+          {
+            _DataPacket[channel_index][i] = PrevPacket[channel_index][i];
+          }
+          //копируем новый в новый
+          for (int i = 0; i < DataPacket[channel_index].Length; i++)
+          {
+            _DataPacket[channel_index][i + PrevPacket[channel_index].Length] = PrevPacket[channel_index][i];
+          }
+        }
+        #endregion
+        IsNullReturned = false;
+        CurrentTime = CurrentTime - (ulong)_DataPacket[m_Artif_Channel].Length;
+        return FindStims(_DataPacket[m_Artif_Channel]);
+      }
+      //Случай наличия артефакта в следующей плохой зоне.
+      if (IsInNextBuffZone)
+      {
+        PrevPacket = DataPacket;
+        IsInNextBuffZone = false;
+        IsNullReturned = true;
+        return null;
+      }
+      //Случай наличия артефакта в нормальной текущей зоне.
+      if (IsInCurrentZone)
+      {
+        IsInCurrentZone = false;
+        IsNullReturned = false;
+        CurrentTime = CurrentTime - (ulong)DataPacket[m_Artif_Channel].Length;
+        return FindStims(DataPacket[m_Artif_Channel]);
+      }
+      #endregion
+      return new List<TStimIndex>();
+    }
+    #endregion
+    #region Непосредственно поиск артефактов основываясь на ExpectedStims
+    public List<TStimIndex> FindStims(TRawData[] DataPacket)
+    {
+      FindedPegs = new List<TStimIndex>();
+
+      /*Временный вариант*/
+      for (short i = (short)FILTER_DEPTH; i < DataPacket.Length - FILTER_DEPTH; i++)
+      {
+        //  DataPacket[i] -= Defaul_Zero_Point;
+      }
+      for (short i = (short)FILTER_DEPTH; i < DataPacket.Length - FILTER_DEPTH; i++)
+      {
+
+        if (TrueValidateSingleStimInT(DataPacket, i))
+        {
           FindedPegs.Add(i);
+          lock (LockStimList)
+          {
+            foreach (TStimIndex stim in FindedPegs)
+            {
+              for (int exp_stim_num = 0; exp_stim_num < m_expectedStims.Count; exp_stim_num++)
+              {
+                if (m_expectedStims[exp_stim_num].stimTime > CurrentTime + (ulong)i - 220
+                  && m_expectedStims[exp_stim_num].stimTime < CurrentTime + (ulong)i + 220)
+                {
+                  m_expectedStims.Remove(m_expectedStims[exp_stim_num]);
+                  break;
+                }
+              }
+            }
+          }
+          i += GUARANTEED_EMPTY_SPACE;
+          //break;
         }
       }
-
-      MissedStimsCount = 0;//  ExpectedStim.count - ValidateCount;
-      
-      //Input to old massive copy
-      PreViewData = new Int32[DataPacket.Length];
-      for (int i = 0; i < DataPacket.Length; i++)
-      {
-        PreViewData[i] = - Defaul_Zero_Point + DataPacket[i];
-      }
-
+      DataRender = new CGraphRender();
+      DataRender.SetData(inner_data_to_display);
+      DataRender.IsMouseVisible = true;
+      DataRender.Run();
+      inner_data_to_display = DataPacket;
       return FindedPegs;
     }
+    #endregion
+    #region Упрощенная верификация артефакта в момент времени t
     private bool BasicValidateSingleStimInT(long t)
     {
-      if (FullData[t + 1] - FullData[t] > 65 &&
-          FullData[t + 2] - FullData[t + 1] > 55 &&
-          FullData[t + 3] - FullData[t + 2] > 35 &&
-          FullData[t + 4] - FullData[t + 3] > 30)
-      {
-        return true;
-      }
-      else
-      {
-        return false;
-      }
-
+      return false;
     }
-    private bool TrueValidateSingleStimInT(long t, int maximum_offset)
+    #endregion
+    #region Верификация артефакта в момент времени t
+    private bool TrueValidateSingleStimInT(TRawData[] DataPacket, long t)
     {
-
       try
       {
         Average pre_average = new Average();
         Average post_average = new Average();
 
-        for (int i = 0; i < maximum_offset; i++)
-        {
-          pre_average.AddValueElem(this.FullData[t - i]);
-        }
         for (int i = 0; i < FILTER_DEPTH; i++)
         {
-          post_average.AddValueElem(this.FullData[t + i]);
+          pre_average.AddValueElem(DataPacket[t - i]);
         }
-
+        for (int i = 5; i < POST_SIGMA_CALC_DEPTH; i++)
+        {
+          post_average.AddValueElem(DataPacket[t + i]);
+        }
         pre_average.Calc();
         post_average.Calc();
-        if (pre_average.IsInArea(FullData[t - 1])
-          && pre_average.IsInArea(FullData[t - 2])
-          && !pre_average.IsInArea(FullData[t])
-          && !pre_average.IsInArea(FullData[t + 1])
-          && !pre_average.IsInArea(post_average.Value - post_average.Sigma)
-          && !pre_average.IsInArea(post_average.Value + post_average.Sigma)
-          ) return true;
+        #region Условия Подтверждения артефакта
+        if (pre_average.IsInArea(DataPacket[t])
+          && !pre_average.IsInArea(DataPacket[t + 1])
+          && !pre_average.IsInArea(post_average.Value - pre_average.Sigma)
+          && !pre_average.IsInArea(post_average.Value + pre_average.Sigma)
+          //Clipping Fix
+          && pre_average.Value > 10
+          && pre_average.Value < 65000
+          //StableLinesFix
+          && Math.Abs(pre_average.Value - post_average.Value) > 160
+          //Blanking Fix
+          && pre_average.Sigma < 35
+          )
+        #endregion
+        {
+          //MessageBox.Show("ArtifFounded");
+          return true;
+        }
         return false;
       }
       catch (Exception e)
@@ -159,8 +267,22 @@ namespace MEAClosedLoop
       }
 
     }
-
+    #endregion
+    #region отрисовка
+    public void DrawCallFunc()
+    {
+      //DataRender = new CGraphRender();
+     // DataRender.Run();
+     /* while (true)
+      {
+        DataRender.SetData(inner_data_to_display);
+        Thread.Sleep(29);
+      }
+      */
+    }
+    #endregion
   }
+  #region Среднее и сигма
   class Average
   {
     private List<int> values;
@@ -190,7 +312,7 @@ namespace MEAClosedLoop
     public bool IsInArea(double Value)
     {
       this.Calc();
-      if (Math.Abs(Value - Value) < TripleSigma) return true;
+      if (Math.Abs(this.Value - Value) < TripleSigma) return true;
       return false;
     }
     public Average()
@@ -200,4 +322,19 @@ namespace MEAClosedLoop
       TripleSigma = 0;
     }
   }
+
+  #endregion
+  #region Описание различых вхождений артефакта в текущий пакет
+  public class cases
+  {
+    public bool InFilterFreeZone;
+    public bool InFilterZone;
+    public cases()
+    {
+      this.InFilterFreeZone = false;
+      this.InFilterZone = false;
+    }
+  }
+  #endregion
+
 }

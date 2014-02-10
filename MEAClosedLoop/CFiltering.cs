@@ -9,10 +9,10 @@ using Common;
 namespace MEAClosedLoop
 {
   using TData = System.Double;
+  using TTime = System.UInt64;
   using TStimIndex = System.Int16;
   using TRawDataPacket = Dictionary<int, ushort[]>;
   using TFltDataPacket = Dictionary<int, System.Double[]>;
-  using StimuliList = List<TStimGroup>;
 
   public class CFiltering
   {
@@ -20,43 +20,76 @@ namespace MEAClosedLoop
     const int MIN_PACKET_SIZE = 150;
 
     private CInputStream m_inputStream;
-    private TRawDataPacket m_prevPacket;
+    private TRawDataPacket m_prevPacket = null;
     //private TRawDataPacket m_currPacket;
     //private TFltDataPacket m_filteredData;
-    private Queue<TFltDataPacket> m_filteredQueue;
-    private AutoResetEvent m_notEmpty;
+    //private Queue<TFltDataPacket> m_filteredQueue;
+    //private AutoResetEvent m_notEmpty;
     private CStimDetector m_stimDetector;
-    private int m_artifChannel;
-    private StimuliList m_expectedStims;
+    public CStimDetector StimDetector { get { return m_stimDetector; } }
     private Dictionary<int, ButterworthFilter> m_bandpassFilters = null;
     private Dictionary<int, LocalFit> m_salpaFilters = null;
     private OnStreamKillDelegate m_onStreamKill = null;
     public OnStreamKillDelegate OnStreamKill { set { m_onStreamKill = value; } }
-    private OnDataAvailableDelegate m_onDataAvailable = null;
-    public OnDataAvailableDelegate OnDataAvailable { set { m_onDataAvailable = value; } }
+    //private OnDataAvailableDelegate m_onDataAvailable = null;
+    //public OnDataAvailableDelegate OnDataAvailable { set { m_onDataAvailable = value; } }
 
     public int NChannels { get { return m_inputStream.NChannels; } }
     public List<int> ChannelList { get { return m_inputStream.ChannelList; } }
-    public ulong TimeStamp { get { return m_inputStream.TimeStamp; } }
+    private TTime m_timeStamp = 0;
+    private Int32 m_sentPacketLength = 0;
+    private object m_timeLock = new object();
+    public ulong TimeStamp { get { lock (m_timeLock) return m_timeStamp; } }
     private volatile bool m_kill;
 
-    // [DEBUG]
+    public delegate void ConsumerDelegate(Dictionary<int, TData[]> data);
+    private List<ConsumerDelegate> m_consumerList = null;
 
-    public CFiltering(CInputStream inputStream, SALPAParams parSALPA, BFParams parBF)
+    public delegate void StimulTimeDelegate(List<TStimIndex> stimul);
+    private List<StimulTimeDelegate> m_stimulCallback = null;
+
+    // [DEBUG]
+    public int m_Count = 0;
+
+    public void AddDataConsumer(ConsumerDelegate consumer)
+    {
+      lock (m_consumerList)
+      {
+        if (m_consumerList.Contains(consumer)) return;
+        m_consumerList.Add(consumer);
+      }
+    }
+
+    public void AddStimulConsumer(StimulTimeDelegate stimConsumer)
+    {
+      lock (m_stimulCallback)
+      {
+        if (m_stimulCallback.Contains(stimConsumer)) return;
+        m_stimulCallback.Add(stimConsumer);
+      }
+    }
+
+
+    public CFiltering(CInputStream inputStream, CStimDetector stimDetector, SALPAParams parSALPA, BFParams parBF)
     {
       m_inputStream = inputStream;
       m_inputStream.OnStreamKill = Dismiss;
       m_inputStream.ConsumerList.Add(ReceiveData);
 
+      m_stimDetector = stimDetector;
 
-      // [TODO] Get parameters from UI and save them in Settings
-      m_stimDetector = new CStimDetector(15, 35, 150);
+      m_consumerList = new List<ConsumerDelegate>();
+      m_stimulCallback = new List<StimulTimeDelegate>();
+
       // [TODO] Allow user to choose stimulus artifact detection channel
-      m_artifChannel = m_inputStream.ChannelList[0];
-      m_expectedStims = null;
+      stimDetector.ArtifactChannel = m_inputStream.ChannelList[0];
 
       if (parSALPA != null)
       {
+        if (m_stimDetector == null)
+        {
+          throw new ArgumentException("Unable to use SALPA without a Stimulus Artifact Detector", "stimDetector");
+        }
         m_salpaFilters = new Dictionary<int, LocalFit>(inputStream.NChannels);
         foreach (int channel in inputStream.ChannelList)
         {
@@ -84,8 +117,8 @@ namespace MEAClosedLoop
         }
       }
 
-      m_filteredQueue = new Queue<TFltDataPacket>();
-      m_notEmpty = new AutoResetEvent(false);
+      //m_filteredQueue = new Queue<TFltDataPacket>();
+      //m_notEmpty = new AutoResetEvent(false);
 //      Thread t = new Thread(new ThreadStart(DoFiltering));
       m_kill = false;
 //      t.Start();
@@ -96,8 +129,10 @@ namespace MEAClosedLoop
 
     }
 
+    /*
     public TFltDataPacket WaitData()
     {
+      m_Count++;
       TFltDataPacket dataPacket = null;
       do
       {
@@ -113,70 +148,137 @@ namespace MEAClosedLoop
         }
       } while (dataPacket == null);
 
-      return dataPacket;
-    }
-
-    public void ReceiveData(TRawDataPacket currPacket)
-    {
-      TFltDataPacket filteredData = new TFltDataPacket(currPacket.Count);
-      // Fill keys to enable parallel foreach on the next step
-      foreach (int channel in currPacket.Keys) filteredData[channel] = null;
-
-      if ((m_salpaFilters != null) && (m_stimDetector != null))
+      lock (m_timeLock)
       {
-        // Prepare "previous" packet for the first packet processing
-        if (m_prevPacket == null)
+        m_timeStamp += (TTime)m_sentPacketLength;
+        m_sentPacketLength = dataPacket[dataPacket.Keys.ElementAt(0)].Length;
+        return dataPacket;
+      }
+    }
+    */
+    private void PushToSalpa(TRawDataPacket packet, List<TStimIndex> stimIndices)
+    {
+      TFltDataPacket filteredData = new TFltDataPacket(packet.Count);
+      // Fill keys to enable parallel foreach on the next step
+      foreach (int channel in packet.Keys) filteredData[channel] = null;
+      if (stimIndices == null)
+      {
+        packet.Keys.AsParallel().ForAll(channel =>
         {
-          m_prevPacket = new TRawDataPacket(currPacket.Count);
-          foreach (int channel in currPacket.Keys) m_prevPacket[channel] = new ushort[MIN_PACKET_SIZE];
-          m_prevPacket.Keys.AsParallel().ForAll(channel => Helpers.PopulateArray<ushort>(m_prevPacket[channel], currPacket[channel][0]));
-        }
-        // [TODO] Check here if we need to call Stim Detector now
-        // if(IsStimulusExpected(timestamp, m_expectedStims) {
-        List<TStimIndex> stimIndices = m_stimDetector.Detect(currPacket[m_artifChannel], m_expectedStims);
-        Dictionary<int, List<TStimIndex>> parStimInd = new Dictionary<int, List<TStimIndex>>(currPacket.Count);
-        foreach (int channel in currPacket.Keys) parStimInd[channel] = new List<TStimIndex>(stimIndices);
-        
-        // [DONE] Add multithreading here // PLINQ
-        m_prevPacket.Keys.AsParallel().ForAll(channel =>
-        {
-          // [TODO] Make SALPA with TRawData input and eliminate the next line
-          filteredData[channel] = Array.ConvertAll(m_prevPacket[channel], x => (TData)x);
-          filteredData[channel] = m_salpaFilters[channel].filter(filteredData[channel], parStimInd[channel]);
-          //filteredData[channel] = m_salpaFilters[channel].filter(filteredData[channel], stimIndices);
+          filteredData[channel] = m_salpaFilters[channel].filter(packet[channel], null);
         });
       }
       else
       {
-        currPacket.Keys.AsParallel().ForAll(channel =>
+        Dictionary<int, List<TStimIndex>> parStimInd = new Dictionary<int, List<TStimIndex>>(packet.Count);
+        // Make a parallel collection of the expected stimuli lists to enable parallel processing
+        foreach (int channel in packet.Keys) parStimInd[channel] = new List<TStimIndex>(stimIndices);
+
+        // Process all channels of the previous packet in parallel (using PLINQ)
+        m_prevPacket.Keys.AsParallel().ForAll(channel =>
         {
-          filteredData[channel] = Array.ConvertAll(currPacket[channel], x => (TData)x);
+          filteredData[channel] = m_salpaFilters[channel].filter(packet[channel], parStimInd[channel]);
         });
       }
+      lock (m_stimulCallback)
+      {
+        if (m_stimulCallback.Count != 0)
+        {
+          foreach (StimulTimeDelegate consumer in m_stimulCallback) consumer(stimIndices);
+        }
+      }
+      PushToButterworth(filteredData);
+    }
 
+    private void PassBySalpa(TRawDataPacket packet)
+    {
+      TFltDataPacket filteredData = new TFltDataPacket(packet.Count);
+      // Fill keys to enable parallel foreach on the next step
+      foreach (int channel in packet.Keys) filteredData[channel] = null;
+
+      // Without SALPA just copy data and change type to TData
+      packet.Keys.AsParallel().ForAll(channel =>
+      {
+        filteredData[channel] = Array.ConvertAll(packet[channel], x => (TData)x);
+      });
+      PushToButterworth(filteredData);
+    }
+
+    // Получает очередной пакет входного потока, проверяет, ожидается ли стимуляция и фильтрует его Сальпой и/или Баттервортом
+    /// <summary>
+    /// Filter current data packet with the SALPA or/and Butterworth
+    /// </summary>
+    /// <param name="currPacket">Current packet of input stream</param>
+    public void ReceiveData(TRawDataPacket currPacket)
+    {
+      if (m_salpaFilters != null)
+      {
+        int currPacketLength = currPacket[currPacket.Keys.ElementAt(0)].Length;
+        List<TStimIndex> stimIndices = null;
+
+        // Check here if we need to call the Stimulus Artifact Detector for the current packet
+        if (m_stimDetector.IsDataRequired(m_inputStream.TimeStamp + (TTime) currPacketLength))
+        {
+          stimIndices = m_stimDetector.Detect(currPacket);
+        }
+
+        if (m_prevPacket != null)                 // В прошлый раз чего-то не нашли, а теперь, может быть, нашли
+        {
+          PushToSalpa(m_prevPacket, stimIndices); // поэтому проталкиваем предыдущий пакет вперёд
+          m_prevPacket = null;
+        }
+
+        if (stimIndices != null)                  // Нормальный случай. Нашли, что ожидалось, или не нашли, что не ожидалось
+        {
+          PushToSalpa(currPacket, stimIndices);
+        }
+        else                                      // Put off processing of the current packet until a stimuli artifacts are found
+        {
+          m_prevPacket = currPacket;
+        }
+      }
+      else
+      {
+        PassBySalpa(currPacket);
+      }
+    }
+
+    private void PushToButterworth(TFltDataPacket filteredData)
+    {
       if (m_bandpassFilters != null)
       {
-        // [DONE] Add multithreading here
-        currPacket.Keys.AsParallel().ForAll(channel =>
+        filteredData.Keys.AsParallel().ForAll(channel =>
         {
           m_bandpassFilters[channel].filterData(filteredData[channel]);
         });
       }
-      lock (m_filteredQueue) m_filteredQueue.Enqueue(filteredData);
+
+      lock (m_timeLock)
+      {
+        m_timeStamp += (TTime)m_sentPacketLength;
+        m_sentPacketLength = filteredData[filteredData.Keys.ElementAt(0)].Length;
+      }
+      lock (m_consumerList)
+      {
+        if ((m_consumerList != null) && (m_consumerList.Count != 0))
+        {
+          foreach (ConsumerDelegate consumer in m_consumerList) consumer(filteredData);
+        }
+      }
+
+      //lock (m_filteredQueue) m_filteredQueue.Enqueue(filteredData);
 
       // Callback
-      if (m_onDataAvailable != null) m_onDataAvailable(filteredData);
+      //if (m_onDataAvailable != null) m_onDataAvailable(filteredData);
 
-      m_notEmpty.Set();
-      
-      m_prevPacket = currPacket;
+      //m_notEmpty.Set();
     }
 
     private void Dismiss()
     {
       m_kill = true;
       if (m_onStreamKill != null) m_onStreamKill();
-      m_notEmpty.Set();
+      //m_notEmpty.Set();
     }
 
     // There are some obsolete functions here ************************************************
