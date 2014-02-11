@@ -178,12 +178,6 @@ namespace MEAClosedLoop
     public List<TStimIndex> FindStims(TRawData[] DataPacket)
     {
       FindedPegs = new List<TStimIndex>();
-
-      /*Временный вариант*/
-      for (short i = (short)FILTER_DEPTH; i < DataPacket.Length - FILTER_DEPTH; i++)
-      {
-        //  DataPacket[i] -= Defaul_Zero_Point;
-      }
       for (short i = (short)FILTER_DEPTH; i < DataPacket.Length - FILTER_DEPTH; i++)
       {
 
@@ -209,10 +203,11 @@ namespace MEAClosedLoop
           //break;
         }
       }
-      DataRender = new CGraphRender();
-      DataRender.SetData(inner_data_to_display);
-      DataRender.IsMouseVisible = true;
-      DataRender.Run();
+      //DataRender = new CGraphRender();
+      //DataRender.SetData(inner_data_to_display);
+      //DataRender.SetDataObj(this);
+      //DataRender.IsMouseVisible = true;
+      //DataRender.Run();
       inner_data_to_display = DataPacket;
       return FindedPegs;
     }
@@ -271,14 +266,9 @@ namespace MEAClosedLoop
     #region отрисовка
     public void DrawCallFunc()
     {
-      //DataRender = new CGraphRender();
-     // DataRender.Run();
-     /* while (true)
-      {
-        DataRender.SetData(inner_data_to_display);
-        Thread.Sleep(29);
-      }
-      */
+      DataRender = new CGraphRender();
+      DataRender.SetDataObj(this);
+      DataRender.Run();
     }
     #endregion
   }

@@ -10,6 +10,8 @@ using Microsoft.Xna.Framework.Input;
 using Microsoft.Xna.Framework.Media;
 using Microsoft.Xna.Framework.Net;
 using Microsoft.Xna.Framework.Storage;
+using MEAClosedLoop;
+using System.Windows;
 namespace MEAClosedLoop
 {
   #region Definitions
@@ -24,19 +26,19 @@ namespace MEAClosedLoop
   {
     GraphicsDeviceManager graphics;
     public TRawData[] DataPacket;
-
+    private CStimDetectShift detector;
     // эффект BasicEffect
     BasicEffect basicEffect;
     // массив вершин
     VertexPositionColor[] vertices;
-    // описание формата вершин
-    VertexDeclaration vertexDeclaration;
-
-
 
     public void SetData(TRawData[] datapacket)
     {
       DataPacket = datapacket;
+    }
+    public void SetDataObj(CStimDetectShift obj)
+    {
+      detector = obj;
     }
     public CGraphRender()
     {
@@ -55,23 +57,13 @@ namespace MEAClosedLoop
          (0, graphics.GraphicsDevice.Viewport.Width,     // left, right
           graphics.GraphicsDevice.Viewport.Height, 0,    // bottom, top
           0, 1);                                         // near, far plane
-      /*
-      vertices = new VertexPositionColor[4];
-      vertices[0].Position = new Vector3(100, 100, 0);
-      vertices[0].Color = Color.Black;
-      vertices[1].Position = new Vector3(200, 100, 0);
-      vertices[1].Color = Color.Red;
-      vertices[2].Position = new Vector3(200, 200, 0);
-      vertices[2].Color = Color.Black;
-      vertices[3].Position = new Vector3(100, 200, 0);
-      vertices[3].Color = Color.Red;
-       */
-      if (DataPacket != null)
+
+      if (detector.inner_data_to_display != null)
       {
-        vertices = new VertexPositionColor[DataPacket.Length];
-        for (int i = 0; i < DataPacket.Length; i++)
+        vertices = new VertexPositionColor[detector.inner_data_to_display.Length];
+        for (int i = 0; i < detector.inner_data_to_display.Length; i++)
         {
-          vertices[i].Position = new Vector3(i /2, (DataPacket[i] - 32768)/100  + 100, 0);
+          vertices[i].Position = new Vector3(i /2, (detector.inner_data_to_display[i] - 32768)/6  + 500, 0);
           vertices[i].Color = Color.Black;
         }
       }
@@ -104,13 +96,20 @@ namespace MEAClosedLoop
 
     protected override void Draw(GameTime gameTime)
     {
-      if (DataPacket != null)
+      this.Initialize();
+      if (detector.inner_data_to_display != null)
       {
         GraphicsDevice.Clear(Color.CornflowerBlue);
 
         basicEffect.CurrentTechnique.Passes[0].Apply();
-        graphics.GraphicsDevice.DrawUserPrimitives<VertexPositionColor>(PrimitiveType.LineStrip, vertices, 0, DataPacket.Length - 1);
-
+        try
+        {
+          graphics.GraphicsDevice.DrawUserPrimitives<VertexPositionColor>(PrimitiveType.LineStrip, vertices, 0, detector.inner_data_to_display.Length - 1);
+        }
+        catch(ArgumentNullException ex)
+        {
+          System.Windows.Forms.MessageBox.Show(ex.Message);
+        }
         base.Draw(gameTime);
       }
     }
