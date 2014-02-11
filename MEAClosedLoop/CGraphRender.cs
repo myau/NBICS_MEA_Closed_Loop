@@ -25,14 +25,14 @@ namespace MEAClosedLoop
     GraphicsDeviceManager graphics;
     public TRawData[] DataPacket;
 
+    // эффект BasicEffect
+    BasicEffect basicEffect;
     // массив вершин
-    VertexPositionColor[] vertexList;
-
+    VertexPositionColor[] vertices;
     // описание формата вершин
     VertexDeclaration vertexDeclaration;
 
-    // эффект BasicEffect
-    BasicEffect effect;
+
 
     public void SetData(TRawData[] datapacket)
     {
@@ -49,6 +49,32 @@ namespace MEAClosedLoop
     }
     protected override void Initialize()
     {
+      basicEffect = new BasicEffect(graphics.GraphicsDevice);
+      basicEffect.VertexColorEnabled = true;
+      basicEffect.Projection = Matrix.CreateOrthographicOffCenter
+         (0, graphics.GraphicsDevice.Viewport.Width,     // left, right
+          graphics.GraphicsDevice.Viewport.Height, 0,    // bottom, top
+          0, 1);                                         // near, far plane
+      /*
+      vertices = new VertexPositionColor[4];
+      vertices[0].Position = new Vector3(100, 100, 0);
+      vertices[0].Color = Color.Black;
+      vertices[1].Position = new Vector3(200, 100, 0);
+      vertices[1].Color = Color.Red;
+      vertices[2].Position = new Vector3(200, 200, 0);
+      vertices[2].Color = Color.Black;
+      vertices[3].Position = new Vector3(100, 200, 0);
+      vertices[3].Color = Color.Red;
+       */
+      if (DataPacket != null)
+      {
+        vertices = new VertexPositionColor[DataPacket.Length];
+        for (int i = 0; i < DataPacket.Length; i++)
+        {
+          vertices[i].Position = new Vector3(i /2, (DataPacket[i] - 32768)/100  + 100, 0);
+          vertices[i].Color = Color.Black;
+        }
+      }
       // TODO: Add your initialization logic here
       base.Initialize();
     }
@@ -80,27 +106,12 @@ namespace MEAClosedLoop
     {
       if (DataPacket != null)
       {
-        for (int i = 0; i < DataPacket.Length - 1; i++)
-        {
-          VertexPositionColor[] line = new VertexPositionColor[2];
-          VertexBuffer vertexBuffer;
-          BasicEffect effect;
+        GraphicsDevice.Clear(Color.CornflowerBlue);
 
-          line[0] = new VertexPositionColor(new Vector3((float)i / 1250 - 1, (float)DataPacket[i] / 32000 - 1, 0), Color.White);          // юмора не понял, но координаты - относительные
-          line[1] = new VertexPositionColor(new Vector3((float)(i + 1) / 1250 - 1,(float) DataPacket[i + 1] / 32000 - 1, 0), Color.White);         // 1 - это край экрана, 0 - центр
-          vertexBuffer = new VertexBuffer(GraphicsDevice, typeof(VertexPositionColor), line.Length, BufferUsage.None);
-          vertexBuffer.SetData(line);
-          effect = new BasicEffect(GraphicsDevice);
-          GraphicsDevice.SetVertexBuffer(vertexBuffer);
+        basicEffect.CurrentTechnique.Passes[0].Apply();
+        graphics.GraphicsDevice.DrawUserPrimitives<VertexPositionColor>(PrimitiveType.LineStrip, vertices, 0, DataPacket.Length - 1);
 
-          foreach (EffectPass pass in effect.CurrentTechnique.Passes)
-          {
-            pass.Apply();
-            GraphicsDevice.DrawUserPrimitives<VertexPositionColor>(PrimitiveType.LineList, line, 0, 1);
-          }
-
-          base.Draw(gameTime);
-        }
+        base.Draw(gameTime);
       }
     }
   }
