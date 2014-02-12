@@ -27,11 +27,14 @@ namespace MEAClosedLoop
     GraphicsDeviceManager graphics;
     public TRawData[] DataPacket;
     private CStimDetectShift detector;
-    // эффект BasicEffect
+    // эффект BasicEffect для кривой
     BasicEffect basicEffect;
-    // массив вершин
+    // массив  вершин нашей кривой
     VertexPositionColor[] vertices;
 
+    BasicEffect basicEffect2;
+
+    VertexPositionColor[][] stimcoords;
     public void SetData(TRawData[] datapacket)
     {
       DataPacket = datapacket;
@@ -43,11 +46,14 @@ namespace MEAClosedLoop
     public CGraphRender()
     {
       graphics = new GraphicsDeviceManager(this);
-      graphics.PreferredBackBufferWidth = 1600; // ширина приложения
+      
+      graphics.PreferredBackBufferWidth = 1350; // ширина приложения
       graphics.PreferredBackBufferHeight = 1000; // высота приложения
       graphics.IsFullScreen = false; // флаг полноэкранного приложения
-      graphics.ApplyChanges(); // применяем параметры
       Content.RootDirectory = "Content";
+      (System.Windows.Forms.Control.FromHandle(this.Window.Handle)).Location = new System.Drawing.Point(0, 0);;
+      graphics.ApplyChanges(); // применяем параметры
+
     }
     protected override void Initialize()
     {
@@ -60,14 +66,31 @@ namespace MEAClosedLoop
 
       if (detector.inner_data_to_display != null)
       {
+        float x_range = (float)graphics.PreferredBackBufferWidth / detector.inner_data_to_display.Count();
+
         vertices = new VertexPositionColor[detector.inner_data_to_display.Length];
         for (int i = 0; i < detector.inner_data_to_display.Length; i++)
         {
-          vertices[i].Position = new Vector3(i /2, (detector.inner_data_to_display[i] - 32768)/6  + 500, 0);
+          vertices[i].Position = new Vector3(i * x_range, (detector.inner_data_to_display[i] - 32768)/6  + 500, 0);
           vertices[i].Color = Color.Black;
         }
       }
       // TODO: Add your initialization logic here
+      if (detector.inner_found_indexes_to_display != null)
+      {
+        float x_range = (float) graphics.PreferredBackBufferWidth / detector.inner_data_to_display.Count();
+
+        stimcoords = new VertexPositionColor[detector.inner_found_indexes_to_display.Count()][];
+        for (int i = 0; i < detector.inner_found_indexes_to_display.Count(); i++)
+        {
+          stimcoords[i] = new VertexPositionColor[2];
+
+          stimcoords[i][0].Position = new Vector3(detector.inner_found_indexes_to_display[i] * x_range, 100, 0);
+          stimcoords[i][0].Color = Color.Red;
+          stimcoords[i][1].Position = new Vector3(detector.inner_found_indexes_to_display[i] * x_range, 900, 0);
+          stimcoords[i][1].Color = Color.Red;
+        }
+      }
       base.Initialize();
     }
 
@@ -105,6 +128,10 @@ namespace MEAClosedLoop
         try
         {
           graphics.GraphicsDevice.DrawUserPrimitives<VertexPositionColor>(PrimitiveType.LineStrip, vertices, 0, detector.inner_data_to_display.Length - 1);
+          for (int i = 0; i < stimcoords.Count(); i++)
+          {
+            graphics.GraphicsDevice.DrawUserPrimitives<VertexPositionColor>(PrimitiveType.LineStrip, stimcoords[i], 0, 1);
+          }
         }
         catch(ArgumentNullException ex)
         {
