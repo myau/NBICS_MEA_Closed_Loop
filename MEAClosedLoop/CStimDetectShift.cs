@@ -20,14 +20,16 @@ namespace MEAClosedLoop
   {
     #region Стандартные значения класса
     public const int ErrorState = -3303;
-    private const TStimIndex FILTER_DEPTH = 22;
+    private const TStimIndex FILTER_DEPTH = 16;
     private const TStimIndex default_offset = 8;
     private const TStimIndex start_offset = 16;
     private const TStimIndex GUARANTEED_EMPTY_SPACE = 10;
     private const TStimIndex POST_SIGMA_CALC_DEPTH = 12;
+    private const TAbsStimIndex BLANK_ARTIF_PRE_MAX_LENGTH = 40;
+    public TAbsStimIndex MaximumShiftRange = 150;
     private const TRawData Defaul_Zero_Point = 32768;
     public bool FullResearch = false; //True for unoptimized research
-    public int m_Artif_Channel = 14;
+    public int m_Artif_Channel = 28;
     public int m_Artif_Channel2 = 14;
     #endregion
 
@@ -36,8 +38,8 @@ namespace MEAClosedLoop
     private cases NextCase;
     private int CallCount;
     private object LockStimList = new object();
+    private object LockExpStimList = new object();
     private TRawDataPacket PrevPacket;
-    private TStimIndex MaximumShiftRange = 50;
     private TTime CurrentTime;
     private bool IsInNextBuffZone;
     private bool IsInCurrentZone;
@@ -90,7 +92,7 @@ namespace MEAClosedLoop
       {
         foreach (TStimGroup stim in m_expectedStims)
         {
-          #region CASE_0 - артефакт вошел в текущую буфферную зону и при предыдущем запросе был возвращен null
+          #region CASE_0 - артефакт вошел в первую буфферную зону рассматриваемого пакета (при предыдущем запросе был возвращен null)
           if (IsNullReturned)
           {
             Flag = true;
@@ -100,22 +102,22 @@ namespace MEAClosedLoop
           }
           #endregion
           #region CASE_1 - артефакт входит во внутрь пакета, исключая буфферные зоны
-          if (stim.stimTime <= TestingTime + (ulong)FILTER_DEPTH)
+          if (stim.stimTime  <= TestingTime - (ulong)FILTER_DEPTH - MaximumShiftRange)
           {
             IsInCurrentZone = true;
             Flag = true;
-            //break;
           }
           else
           {
             IsInCurrentZone = false || IsInCurrentZone;
           }
           #endregion
-          #region CASE_2 - артефакт находится в первой буфферной зоне следующего и замыкающей предыдущего пакета.
-          if (stim.stimTime <= TestingTime + (ulong)FILTER_DEPTH && stim.stimTime >= TestingTime - (ulong)FILTER_DEPTH)
+          #region CASE_2 - артефакт находится в первой буфферной зоне следующего или второй рассматриваемого пакета.
+          if (stim.stimTime <= TestingTime + (ulong)FILTER_DEPTH + MaximumShiftRange
+            && stim.stimTime >= TestingTime - (ulong)FILTER_DEPTH - MaximumShiftRange)
           {
             IsInNextBuffZone = true;
-            Flag = false;
+            Flag = true;
           }
           else
           {
@@ -133,13 +135,6 @@ namespace MEAClosedLoop
     public List<TStimIndex> GetStims(TRawDataPacket DataPacket)
     {
       CallCount++;
-      inner_found_indexes_to_display = FindedPegs;
-      inner_data_to_display = DataPacket[m_Artif_Channel];
-
-      Thread.Sleep(1400);
-      #region Удаление низких частот
-
-      #endregion
       #region Определение ситуации с расположением артефактов в пакете
       //Случай, когда мы просим задержать пакет.
       if (IsNullReturned)
@@ -188,20 +183,16 @@ namespace MEAClosedLoop
     #region Непосредственно поиск артефактов основываясь на ExpectedStims
     public List<TStimIndex> FindStims(TRawData[] DataPacket)
     {
-      #region Удаление устаревших данных об ожидаемых стимулах
-      List<TStimGroup> stim_to_remove = new List<TStimGroup>();
-      foreach (TStimGroup stim in m_expectedStims)
+      lock (LockExpStimList)
       {
-        if (stim.stimTime < CurrentTime)
+        inner_expectedStims_to_display = new List<TStimGroup>();
+        for (int i = 0; i < m_expectedStims.Count(); i++)
         {
-          stim_to_remove.Add(stim);
+          TStimGroup gr = new TStimGroup();
+          gr.stimTime = m_expectedStims[i].stimTime - CurrentTime;
+          inner_expectedStims_to_display.Add(gr);
         }
       }
-      foreach (TStimGroup stim in stim_to_remove)
-      {
-        m_expectedStims.Remove(stim);
-      }
-      #endregion
       FindedPegs = new List<TStimIndex>();
       List<TStimGroup> stims_to_remove = new List<TStimGroup>();
       if (FullResearch)
@@ -219,10 +210,9 @@ namespace MEAClosedLoop
               {
                 for (int exp_stim_num = 0; exp_stim_num < m_expectedStims.Count; exp_stim_num++)
                 {
-                  if (m_expectedStims[exp_stim_num].stimTime > CurrentTime + (ulong)i - 220
-                    && m_expectedStims[exp_stim_num].stimTime < CurrentTime + (ulong)i + 220)
+                  if (m_expectedStims[exp_stim_num].stimTime > CurrentTime + (ulong)i - MaximumShiftRange && m_expectedStims[exp_stim_num].stimTime < CurrentTime + (ulong)i + MaximumShiftRange)
                   {
-                    m_expectedStims.Remove(m_expectedStims[exp_stim_num]);
+                    stims_to_remove.Add(m_expectedStims[exp_stim_num]);
                     break;
                   }
                 }
@@ -239,24 +229,54 @@ namespace MEAClosedLoop
         #region Поиск около ожидаемых артефактов
         foreach (TStimGroup stim in m_expectedStims)
         {
-          TAbsStimIndex rightRange = (stim.stimTime - CurrentTime + ((TAbsStimIndex)MaximumShiftRange) > (TAbsStimIndex)DataPacket.Length) ? (TAbsStimIndex)DataPacket.Length : (stim.stimTime - CurrentTime + ((TAbsStimIndex)MaximumShiftRange));
-          TAbsStimIndex leftRange = (stim.stimTime - CurrentTime - (TAbsStimIndex)MaximumShiftRange > 0) ? 0 : (stim.stimTime - CurrentTime - (TAbsStimIndex)MaximumShiftRange);
-          for (TAbsStimIndex i = leftRange; i < rightRange ; i++ )
+          TAbsStimIndex rightRange = (stim.stimTime - CurrentTime + ((TAbsStimIndex)MaximumShiftRange) + (TAbsStimIndex)FILTER_DEPTH > (TAbsStimIndex)DataPacket.Length) ? (TAbsStimIndex)DataPacket.Length : (stim.stimTime - CurrentTime + ((TAbsStimIndex)MaximumShiftRange));
+          TAbsStimIndex leftRange = (stim.stimTime - CurrentTime - (TAbsStimIndex)MaximumShiftRange - (TAbsStimIndex)FILTER_DEPTH < 0 && stim.stimTime - CurrentTime - (TAbsStimIndex)MaximumShiftRange - (TAbsStimIndex)FILTER_DEPTH < 20000) ? 0 : (stim.stimTime - CurrentTime - (TAbsStimIndex)MaximumShiftRange);
+          for (TAbsStimIndex i = leftRange; i < rightRange; i++)
           {
             if (TrueValidateSingleStimInT(DataPacket, (TStimIndex)i))
             {
-              FindedPegs.Add((TStimIndex)i);
-              stims_to_remove.Add(stim);
+              bool IsBlankinkArtif = false;
+              TAbsStimIndex SubRightRange = (i + BLANK_ARTIF_PRE_MAX_LENGTH + (TAbsStimIndex)FILTER_DEPTH < (TAbsStimIndex)DataPacket.Length) ? i + BLANK_ARTIF_PRE_MAX_LENGTH : (TAbsStimIndex)DataPacket.Length - (TAbsStimIndex)FILTER_DEPTH - 1;
+              for (TAbsStimIndex j = i + 28; j < SubRightRange; j++)
+              {
+                if (TrueValidateSingleStimInT(DataPacket, (TStimIndex)j))
+                {
+                  IsBlankinkArtif = true;
+                  break;
+                }
+              }
+              if (IsBlankinkArtif)
+              {
+                i += 28;
+                continue;
+              }
+              else
+              {
+                FindedPegs.Add((TStimIndex)i);
+                stims_to_remove.Add(stim);
+                break;
+              }
             }
           }
         }
-        foreach (TStimGroup _stim in stims_to_remove)
-        {
-          m_expectedStims.Remove(_stim);
-        }
         #endregion
       }
+      #region Удаление найденных координат артефактов стимуляций из списка ожидаемых.
+      #region  Добавим устаревшие на удаление.
+      foreach (TStimGroup _stim in m_expectedStims)
+      {
+        if (_stim.stimTime < CurrentTime) stims_to_remove.Add(_stim);
+      }
+      #endregion
+      foreach (TStimGroup _stim in stims_to_remove)
+      {
+        if (m_expectedStims.Contains(_stim)) m_expectedStims.Remove(_stim);
+      }
+      #endregion
       
+      inner_data_to_display = DataPacket;
+      inner_found_indexes_to_display = FindedPegs;
+      Thread.Sleep(250);
       return FindedPegs;
     }
     #endregion

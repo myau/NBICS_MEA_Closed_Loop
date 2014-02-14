@@ -27,7 +27,7 @@ namespace StimDetectorTest
     private const UInt16 MULTI_INNER_PERIOD = 10 * TIME_MULT; //!< Период между соседними стимулами внутри пачки
     private const UInt16 MULTI_PACK_PERIOD = 300 * TIME_MULT; //!< Период между пачками
 
-    private const UInt16 MAX_TIME_NOISE = 10 * TIME_MULT; //!< Максимальный разброс приблизительного времени стимуляции
+    private const UInt16 MAX_TIME_NOISE = 5 * TIME_MULT; //!< Максимальный разброс приблизительного времени стимуляции
 
     private const TTime MAX_FILE_LENGTH = 800000 * TIME_MULT; //!< Максимальная длина входного файла
 
