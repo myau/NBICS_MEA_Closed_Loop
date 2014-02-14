@@ -32,9 +32,10 @@ namespace MEAClosedLoop
     // массив  вершин нашей кривой
     VertexPositionColor[] vertices;
 
-    BasicEffect basicEffect2;
-
+    // массив массивов вершин для найденных стимулов
     VertexPositionColor[][] stimcoords;
+    // массив массивов вершин для ожидаемых стимулов
+    VertexPositionColor[][] expstimcoords;
     public void SetData(TRawData[] datapacket)
     {
       DataPacket = datapacket;
@@ -46,12 +47,12 @@ namespace MEAClosedLoop
     public CGraphRender()
     {
       graphics = new GraphicsDeviceManager(this);
-      
+
       graphics.PreferredBackBufferWidth = 1350; // ширина приложения
       graphics.PreferredBackBufferHeight = 1000; // высота приложения
       graphics.IsFullScreen = false; // флаг полноэкранного приложения
       Content.RootDirectory = "Content";
-      (System.Windows.Forms.Control.FromHandle(this.Window.Handle)).Location = new System.Drawing.Point(0, 0);;
+      (System.Windows.Forms.Control.FromHandle(this.Window.Handle)).Location = new System.Drawing.Point(0, 0); ;
       graphics.ApplyChanges(); // применяем параметры
 
     }
@@ -90,6 +91,13 @@ namespace MEAClosedLoop
           stimcoords[i][1].Position = new Vector3(detector.inner_found_indexes_to_display[i] * x_range, 900, 0);
           stimcoords[i][1].Color = Color.Red;
         }
+      }
+      if(detector.inner_expectedStims_to_display != null)
+      {
+        float x_range = (float) graphics.PreferredBackBufferWidth / detector.inner_data_to_display.Count();
+        expstimcoords = new VertexPositionColor[];
+
+        for()
       }
       base.Initialize();
     }
@@ -133,7 +141,7 @@ namespace MEAClosedLoop
             graphics.GraphicsDevice.DrawUserPrimitives<VertexPositionColor>(PrimitiveType.LineStrip, stimcoords[i], 0, 1);
           }
         }
-        catch(ArgumentNullException ex)
+        catch (ArgumentNullException ex)
         {
           System.Windows.Forms.MessageBox.Show(ex.Message);
         }

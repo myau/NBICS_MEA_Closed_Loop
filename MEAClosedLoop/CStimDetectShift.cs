@@ -26,7 +26,6 @@ namespace MEAClosedLoop
     private const TStimIndex GUARANTEED_EMPTY_SPACE = 10;
     private const TStimIndex POST_SIGMA_CALC_DEPTH = 12;
     private const TRawData Defaul_Zero_Point = 32768;
-    private List<TStimGroup> m_expectedStims;
     public bool FullResearch = false; //True for unoptimized research
     public int m_Artif_Channel = 14;
     public int m_Artif_Channel2 = 14;
@@ -45,6 +44,8 @@ namespace MEAClosedLoop
     private bool IsNullReturned;
     public CGraphRender DataRender;
     List<TStimIndex> FindedPegs;
+    public List<TStimGroup> m_expectedStims;
+    public List<TStimGroup> inner_expectedStims_to_display;
     public TRawData[] inner_data_to_display;
     public List<TStimIndex> inner_found_indexes_to_display;
     //TestGraph GrafForm = new TestGraph();
@@ -132,6 +133,10 @@ namespace MEAClosedLoop
     public List<TStimIndex> GetStims(TRawDataPacket DataPacket)
     {
       CallCount++;
+      inner_found_indexes_to_display = FindedPegs;
+      inner_data_to_display = DataPacket[m_Artif_Channel];
+
+      Thread.Sleep(1400);
       #region Удаление низких частот
 
       #endregion
@@ -251,9 +256,7 @@ namespace MEAClosedLoop
         }
         #endregion
       }
-      inner_found_indexes_to_display = FindedPegs;
-      inner_data_to_display = DataPacket;
-      Thread.Sleep(1400);
+      
       return FindedPegs;
     }
     #endregion
