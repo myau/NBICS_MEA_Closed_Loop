@@ -276,7 +276,7 @@ namespace MEAClosedLoop
       
       inner_data_to_display = DataPacket;
       inner_found_indexes_to_display = FindedPegs;
-      Thread.Sleep(250);
+      //Thread.Sleep(250);
       return FindedPegs;
     }
     #endregion
@@ -335,10 +335,10 @@ namespace MEAClosedLoop
     #region отрисовка
     public void DrawCallFunc()
     {
-      DataRender = new CGraphRender();
-      DataRender.IsMouseVisible = true;
-      DataRender.SetDataObj(this);
-      DataRender.Run();
+    //  DataRender = new CGraphRender();
+    //  DataRender.IsMouseVisible = true;
+    //  DataRender.SetDataObj(this);
+    //  DataRender.Run();
     }
     #endregion
   }
